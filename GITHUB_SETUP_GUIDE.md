@@ -39,6 +39,7 @@ git push -u origin main
 1. Go to https://github.com/schmoll86/options_trading_bot_2026
 2. You should see all your files uploaded
 3. Your `.env` file should NOT be visible (it's in .gitignore)
+4. The `.env.example` file WILL be visible with all configuration placeholders
 
 ## Important Security Notes
 
@@ -60,10 +61,54 @@ git push -u origin main
 
 Once your code is on GitHub, you can easily deploy to Ubuntu:
 
-1. SSH into your Ubuntu server
-2. Clone the repository
-3. Set up the environment
-4. Configure systemd service
-5. Start the bot
+1. **SSH into your Ubuntu server**
+   ```bash
+   ssh your-user@your-ubuntu-server
+   ```
+
+2. **Clone the repository**
+   ```bash
+   git clone https://github.com/schmoll86/options_trading_bot_2026.git
+   cd options_trading_bot_2026
+   ```
+
+3. **Set up the environment**
+   ```bash
+   # Install Python 3.11 if needed
+   sudo apt update
+   sudo apt install python3.11 python3.11-venv
+   
+   # Create virtual environment
+   python3.11 -m venv venv
+   source venv/bin/activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+4. **Configure the bot**
+   ```bash
+   # Copy the example environment file
+   cp .env.example .env
+   
+   # Edit with your actual values
+   nano .env
+   ```
+
+5. **Set up systemd service**
+   ```bash
+   # Copy service file
+   sudo cp trading-bot.service /etc/systemd/system/
+   
+   # Update paths in service file if needed
+   sudo nano /etc/systemd/system/trading-bot.service
+   
+   # Enable and start the service
+   sudo systemctl enable trading-bot
+   sudo systemctl start trading-bot
+   
+   # Check status
+   sudo systemctl status trading-bot
+   ```
 
 Let me know when you've created the repository on GitHub, and I'll help you push your code! 
