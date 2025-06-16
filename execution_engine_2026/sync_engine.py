@@ -209,10 +209,10 @@ class SyncExecutionEngine2026:
                 change_pct = (last_price - close_price) / close_price
                 self.logger.info(f"SPY change: {change_pct:.3%} (Last: ${last_price:.2f}, Close: ${close_price:.2f})")
                 
-                # Simple 0.5% threshold (reduced from 1%)
-                if change_pct > 0.005:
+                # Original 1.5% threshold (stricter)
+                if change_pct > 0.015:
                     market_trend = MarketCondition.BULLISH
-                elif change_pct < -0.005:
+                elif change_pct < -0.015:
                     market_trend = MarketCondition.BEARISH
                 else:
                     market_trend = MarketCondition.NEUTRAL
@@ -227,8 +227,8 @@ class SyncExecutionEngine2026:
                 if vix_data and vix_data.get('last') and vix_data['last'] > 0:
                     vix_level = vix_data['last']
                     self.logger.info(f"VIX level: {vix_level:.2f}")
-                    # High VIX = high volatility
-                    if vix_level > 20:
+                    # High VIX = high volatility (original stricter threshold)
+                    if vix_level > 15:
                         volatility = MarketCondition.HIGH_VOLATILITY
                         self.logger.info(f"High volatility detected: VIX={vix_level:.2f}")
                 else:
