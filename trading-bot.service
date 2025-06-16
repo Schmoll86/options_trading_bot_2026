@@ -1,0 +1,17 @@
+[Unit]
+Description=Options Trading Bot 2026
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/options_trading_bot_2026
+Environment="PATH=/home/ubuntu/options_trading_bot_2026/venv/bin"
+ExecStart=/home/ubuntu/options_trading_bot_2026/venv/bin/python /home/ubuntu/options_trading_bot_2026/main_sync_with_web.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/options_trading_bot_2026/logs/bot.log
+StandardError=append:/home/ubuntu/options_trading_bot_2026/logs/bot.log
+
+[Install]
+WantedBy=multi-user.target 

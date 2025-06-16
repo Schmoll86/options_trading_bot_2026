@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Trading Bot 2026</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <style>
+        .card {
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .strategy-card {
+            border-left: 4px solid #007bff;
+        }
+        .volatile-strategy {
+            border-left: 4px solid #ffc107;
+        }
+        .bull-strategy {
+            border-left: 4px solid #28a745;
+        }
+        .bear-strategy {
+            border-left: 4px solid #dc3545;
+        }
+        .metric-card {
+            text-align: center;
+            padding: 15px;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .metric-label {
+            color: #6c757d;
+        }
+        .trade-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .error-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .action-card {
+            border-left: 4px solid #6c757d;
+        }
+        .action-open {
+            border-left-color: #28a745;
+        }
+        .action-close {
+            border-left-color: #dc3545;
+        }
+        .action-scan {
+            border-left-color: #17a2b8;
+        }
+        .action-error {
+            border-left-color: #dc3545;
+        }
+        .stock-scroll {
+            max-height: 200px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .stock-item {
+            padding: 8px;
+            margin: 5px 0;
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+        .stock-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+        .stock-symbol {
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .stock-score {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            color: white;
+        }
+        .score-positive {
+            background-color: #28a745;
+        }
+        .score-negative {
+            background-color: #dc3545;
+        }
+        .score-neutral {
+            background-color: #6c757d;
+        }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .stock-item.new-item {
+            animation: fadeIn 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">Options Trading Bot 2026</span>
+            <span class="navbar-text" id="bot-status">Status: <span class="badge bg-secondary">Stopped</span></span>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- Portfolio Overview -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Portfolio Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-card">
+                            <div class="metric-value" id="portfolio-value">$0.00</div>
+                            <div class="metric-label">Portfolio Value</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="daily-pnl">$0.00</div>
+                            <div class="metric-label">Daily P&L</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="total-pnl">$0.00</div>
+                            <div class="metric-label">Total P&L</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Trades -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Active Trades</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="trade-list" id="active-trades">
+                            <!-- Trades will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk Metrics -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Risk Metrics</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="risk-metrics">
+                            <!-- Risk metrics will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <!-- Recent Actions -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Recent Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="trade-list" id="recent-actions">
+                            <!-- Actions will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Errors -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Errors</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="error-list" id="errors">
+                            <!-- Errors will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <!-- Stock Screening Results -->
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Stock Screening Results</h5>
+                        <small class="text-muted">Real-time stock analysis</small>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- Bull Stocks -->
+                            <div class="col-md-4">
+                                <h6 class="text-success">🐂 Bullish Stocks</h6>
+                                <div class="stock-scroll" id="bull-stocks">
+                                    <!-- Bull stocks will be inserted here -->
+                                </div>
+                            </div>
+                            <!-- Bear Stocks -->
+                            <div class="col-md-4">
+                                <h6 class="text-danger">🐻 Bearish Stocks</h6>
+                                <div class="stock-scroll" id="bear-stocks">
+                                    <!-- Bear stocks will be inserted here -->
+                                </div>
+                            </div>
+                            <!-- Volatile Stocks -->
+                            <div class="col-md-4">
+                                <h6 class="text-warning">⚡ Volatile Stocks</h6>
+                                <div class="stock-scroll" id="volatile-stocks">
+                                    <!-- Volatile stocks will be inserted here -->
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <small class="text-muted">Last screened: <span id="last-screened">Never</span></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        let lastUpdate = null;
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('status_update', (data) => {
+            updateDashboard(data);
+        });
+
+        function updateDashboard(data) {
+            // Update portfolio metrics
+            document.getElementById('portfolio-value').textContent = formatCurrency(data.portfolio_value);
+            document.getElementById('daily-pnl').textContent = formatCurrency(data.daily_pnl);
+            document.getElementById('total-pnl').textContent = formatCurrency(data.total_pnl);
+
+            // Update bot status
+            const statusBadge = document.querySelector('#bot-status .badge');
+            statusBadge.textContent = data.bot_status;
+            statusBadge.className = `badge ${getStatusClass(data.bot_status)}`;
+
+            // Update active trades
+            const tradesContainer = document.getElementById('active-trades');
+            tradesContainer.innerHTML = data.active_trades.map(trade => createTradeCard(trade)).join('');
+
+            // Update recent actions
+            const actionsContainer = document.getElementById('recent-actions');
+            actionsContainer.innerHTML = data.recent_actions.map(action => createActionCard(action)).join('');
+
+            // Update errors
+            const errorsContainer = document.getElementById('errors');
+            errorsContainer.innerHTML = data.errors.map(error => createErrorCard(error)).join('');
+
+            // Update risk metrics
+            const riskMetricsContainer = document.getElementById('risk-metrics');
+            riskMetricsContainer.innerHTML = createRiskMetrics(data.risk_metrics);
+
+            // Update stock screening results
+            if (data.screening_results) {
+                updateScreeningResults(data.screening_results);
+            }
+
+            lastUpdate = new Date(data.last_update);
+        }
+
+        function updateScreeningResults(screeningData) {
+            // Update bull stocks
+            const bullContainer = document.getElementById('bull-stocks');
+            updateStockList(bullContainer, screeningData.bull || []);
+
+            // Update bear stocks
+            const bearContainer = document.getElementById('bear-stocks');
+            updateStockList(bearContainer, screeningData.bear || []);
+
+            // Update volatile stocks
+            const volatileContainer = document.getElementById('volatile-stocks');
+            updateStockList(volatileContainer, screeningData.volatile || []);
+
+            // Update last screened time
+            const lastScreenedElement = document.getElementById('last-screened');
+            if (screeningData.last_update) {
+                lastScreenedElement.textContent = new Date(screeningData.last_update).toLocaleTimeString();
+            }
+        }
+
+        function updateStockList(container, stocks) {
+            const existingSymbols = new Set(
+                Array.from(container.querySelectorAll('.stock-item')).map(el => el.dataset.symbol)
+            );
+
+            // Clear container
+            container.innerHTML = '';
+
+            // Add stocks
+            stocks.forEach((stock, index) => {
+                const [symbol, score, rank] = stock;
+                const stockElement = createStockItem(symbol, score, rank);
+                
+                // Add animation for new items
+                if (!existingSymbols.has(symbol)) {
+                    stockElement.classList.add('new-item');
+                }
+                
+                // Add with slight delay for cascade effect
+                setTimeout(() => {
+                    container.appendChild(stockElement);
+                }, index * 50);
+            });
+
+            // Show placeholder if no stocks
+            if (stocks.length === 0) {
+                container.innerHTML = '<div class="text-muted text-center">No stocks found</div>';
+            }
+        }
+
+        function createStockItem(symbol, score, rank) {
+            const div = document.createElement('div');
+            div.className = 'stock-item';
+            div.dataset.symbol = symbol;
+            
+            const scoreClass = score > 0 ? 'score-positive' : score < 0 ? 'score-negative' : 'score-neutral';
+            const scoreFormatted = (score * 100).toFixed(1);
+            
+            div.innerHTML = `
+                <div>
+                    <span class="stock-symbol">${symbol}</span>
+                    <small class="text-muted ms-2">#${rank}</small>
+                </div>
+                <span class="stock-score ${scoreClass}">${scoreFormatted > 0 ? '+' : ''}${scoreFormatted}%</span>
+            `;
+            
+            return div;
+        }
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(value);
+        }
+
+        function getStatusClass(status) {
+            switch (status.toLowerCase()) {
+                case 'running':
+                    return 'bg-success';
+                case 'stopped':
+                    return 'bg-danger';
+                case 'paused':
+                    return 'bg-warning';
+                default:
+                    return 'bg-secondary';
+            }
+        }
+
+        function createTradeCard(trade) {
+            const strategyClass = getStrategyClass(trade.strategy);
+            return `
+                <div class="card strategy-card ${strategyClass} mb-2">
+                    <div class="card-body">
+                        <h6 class="card-title">${trade.symbol} - ${trade.strategy}</h6>
+                        <p class="card-text">
+                            Entry: ${formatCurrency(trade.entry_price)}<br>
+                            Current: ${formatCurrency(trade.current_price)}<br>
+                            P&L: ${formatCurrency(trade.pnl)} (${trade.pnl_pct}%)
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createActionCard(action) {
+            const actionClass = getActionClass(action.type);
+            return `
+                <div class="card action-card ${actionClass} mb-2">
+                    <div class="card-body">
+                        <h6 class="card-title">${action.type} - ${action.symbol}</h6>
+                        <p class="card-text">
+                            Strategy: ${action.strategy}<br>
+                            Time: ${new Date(action.timestamp).toLocaleString()}<br>
+                            Details: ${JSON.stringify(action.details, null, 2)}
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createErrorCard(error) {
+            return `
+                <div class="card border-danger mb-2">
+                    <div class="card-body">
+                        <h6 class="card-title text-danger">${error.type}</h6>
+                        <p class="card-text">
+                            ${error.message}<br>
+                            Time: ${new Date(error.timestamp).toLocaleString()}<br>
+                            ${error.details ? `Details: ${JSON.stringify(error.details, null, 2)}` : ''}
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createRiskMetrics(metrics) {
+            return `
+                <div class="metric-card">
+                    <div class="metric-value">${formatCurrency(metrics.max_trade_size)}</div>
+                    <div class="metric-label">Max Trade Size</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatCurrency(metrics.daily_loss)}</div>
+                    <div class="metric-label">Daily Loss</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${metrics.active_trailing_stops}</div>
+                    <div class="metric-label">Active Trailing Stops</div>
+                </div>
+            `;
+        }
+
+        function getStrategyClass(strategy) {
+            if (strategy.toLowerCase().includes('volatile')) {
+                return 'volatile-strategy';
+            } else if (strategy.toLowerCase().includes('bull')) {
+                return 'bull-strategy';
+            } else if (strategy.toLowerCase().includes('bear')) {
+                return 'bear-strategy';
+            }
+            return '';
+        }
+
+        function getActionClass(actionType) {
+            switch (actionType.toLowerCase()) {
+                case 'open':
+                    return 'action-open';
+                case 'close':
+                    return 'action-close';
+                case 'scan':
+                    return 'action-scan';
+                case 'error':
+                    return 'action-error';
+                default:
+                    return '';
+            }
+        }
+    </script>
+</body>
+</html>

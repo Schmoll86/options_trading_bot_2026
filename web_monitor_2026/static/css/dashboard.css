@@ -1,0 +1,295 @@
+/* Global Styles */
+:root {
+    --primary-color: #2c3e50;
+    --secondary-color: #34495e;
+    --success-color: #27ae60;
+    --warning-color: #f39c12;
+    --danger-color: #e74c3c;
+    --info-color: #3498db;
+    --light-bg: #f8f9fa;
+    --dark-bg: #2c3e50;
+    --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --transition-speed: 0.3s;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: #333;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header Styles */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    color: #2c3e50;
+    font-size: 2rem;
+}
+
+.status-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+}
+
+.status-badge {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.status-badge.running {
+    background: #27ae60;
+    color: white;
+}
+
+.status-badge.stopped {
+    background: #e74c3c;
+    color: white;
+}
+
+.status-badge.connecting {
+    background: #f39c12;
+    color: white;
+}
+
+#last-update {
+    font-size: 0.8rem;
+    color: #7f8c8d;
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 20px;
+}
+
+/* Card Styles */
+.card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.card h2 {
+    margin-bottom: 15px;
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 5px;
+}
+
+/* Portfolio Card */
+.portfolio-card {
+    grid-column: span 2;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+
+.metric {
+    text-align: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #3498db;
+}
+
+.metric-label {
+    display: block;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+    margin-bottom: 5px;
+}
+
+.metric-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.metric-value.positive {
+    color: #27ae60;
+}
+
+.metric-value.negative {
+    color: #e74c3c;
+}
+
+/* Risk Card */
+.risk-card {
+    grid-column: span 1;
+}
+
+.risk-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.risk-item:last-child {
+    border-bottom: none;
+}
+
+/* Trades Card */
+.trades-card {
+    grid-column: span 2;
+}
+
+.trades-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.trade-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    border-left: 4px solid #3498db;
+    background: #e8f6f3;
+    border-left-color: #27ae60;
+}
+
+.trade-item.bull {
+    border-left-color: var(--success-color);
+}
+
+.trade-item.bear {
+    border-left-color: var(--danger-color);
+}
+
+.trade-item.volatile {
+    border-left-color: var(--warning-color);
+}
+
+/* Actions Card */
+.actions-card {
+    grid-column: span 2;
+}
+
+.actions-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.action-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    border-left: 4px solid #3498db;
+    background: #fef9e7;
+    border-left-color: #f39c12;
+}
+
+.action-item.open {
+    border-left-color: var(--success-color);
+}
+
+.action-item.close {
+    border-left-color: var(--danger-color);
+}
+
+.action-item.scan {
+    border-left-color: var(--warning-color);
+}
+
+/* Errors Card */
+.errors-card {
+    grid-column: span 2;
+}
+
+.errors-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.error-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    border-left: 4px solid #3498db;
+    background: #fdedec;
+    border-left-color: #e74c3c;
+}
+
+/* Chart Card */
+.chart-card {
+    grid-column: span 2;
+}
+
+#performance-chart {
+    max-height: 300px;
+}
+
+/* No Data Message */
+.no-data {
+    text-align: center;
+    color: #95a5a6;
+    font-style: italic;
+    padding: 20px;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .portfolio-card,
+    .trades-card,
+    .actions-card,
+    .errors-card,
+    .chart-card {
+        grid-column: span 1;
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .chart-card {
+        grid-column: span 1;
+    }
+    
+    .metric-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    header {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
