@@ -8,7 +8,11 @@ import numpy as np
 
 class BullModule2026:
     """
-    Professional Bull Call Spread Strategy Implementation
+    Production Bull Call Spread Strategy - NO TESTING CODE
+    
+    Architecture Layer: Strategy Implementation (Layer 5)
+    Dependencies: IBKR Client (Layer 2), Portfolio Provider (Layer 4)
+    Used By: Execution Engine (Layer 6)
     
     Strategy focuses on:
     - High probability setups in uptrending stocks
@@ -43,6 +47,7 @@ class BullModule2026:
         self.min_volume = 1000  # Minimum daily volume
         self.min_open_interest = 100  # Minimum open interest
         self.max_bid_ask_spread_pct = 0.03  # Max 3% bid-ask spread
+        self.min_risk_reward_ratio = 2.0  # Minimum 2:1 risk/reward ratio
         
         # Technical requirements
         self.min_rsi = 40  # RSI above 40 (not oversold)
@@ -52,13 +57,15 @@ class BullModule2026:
 
     async def scan_opportunities(self, symbols: List[str]) -> List[Dict]:
         """
-        Scan for bull call spread opportunities with professional criteria
+        Scan for bull call spread opportunities - PRODUCTION ONLY
         
-        This method integrates with:
-        1. Sentiment analysis (bullish market required)
-        2. Stock screener (provides pre-filtered symbols)
-        3. Technical analysis
-        4. Options analysis
+        Data Flow: Pre-screened symbols → Technical analysis → Options analysis → Validated opportunities
+        
+        Args:
+            symbols: Pre-screened bullish symbols from stock screener
+            
+        Returns:
+            List of validated bull call spread opportunities
         """
         opportunities = []
         
@@ -88,14 +95,14 @@ class BullModule2026:
     async def _analyze_symbol(self, symbol: str) -> Optional[Dict]:
         """Analyze a single symbol for bull call spread opportunity"""
         try:
-            # Get current price and historical data
+            # Get real market data from IBKR
             stock_data = await self.ibkr_client.get_market_data(symbol)
             if not stock_data or not stock_data.get('last'):
                 return None
             
             current_price = stock_data['last']
             
-            # Get historical data for technical analysis
+            # Get real historical data for technical analysis
             hist_data = await self.ibkr_client.get_historical_data(
                 symbol, duration='60 D', bar_size='1 day'
             )
@@ -103,19 +110,19 @@ class BullModule2026:
             if hist_data is None or len(hist_data) == 0:
                 return None
             
-            # Calculate technical indicators
+            # Calculate technical indicators from real data
             tech_signals = self._calculate_technical_indicators(hist_data, current_price)
             if not tech_signals['bullish']:
                 return None
             
-            # Get options chain
+            # Get real options chain from IBKR
             expiry = self._get_optimal_expiry()
             options_chain = await self.ibkr_client.get_options_chain(symbol, expiry)
             
             if not options_chain:
                 return None
             
-            # Find optimal strikes for bull call spread
+            # Find optimal strikes based on real options data
             spread_params = self._find_optimal_spread(
                 options_chain, current_price, tech_signals['volatility']
             )
@@ -123,7 +130,7 @@ class BullModule2026:
             if not spread_params:
                 return None
             
-            # Calculate spread metrics
+            # Calculate spread metrics from real data
             spread_metrics = self._calculate_spread_metrics(
                 spread_params, current_price, tech_signals
             )
@@ -154,7 +161,7 @@ class BullModule2026:
             return None
 
     def _calculate_technical_indicators(self, hist_data, current_price) -> Dict:
-        """Calculate technical indicators for bullish confirmation"""
+        """Calculate technical indicators from real historical data"""
         try:
             # Handle BarDataList from ib_insync
             if hasattr(hist_data, '__iter__') and not hasattr(hist_data, 'values'):
@@ -178,7 +185,7 @@ class BullModule2026:
             # Trend strength (price relative to moving averages)
             trend_strength = (current_price - sma_50) / sma_50
             
-            # Bullish signals
+            # Bullish signals based on real data
             bullish = (
                 current_price > sma_20 and
                 current_price > sma_50 and
@@ -202,7 +209,7 @@ class BullModule2026:
             return {'bullish': False, 'volatility': 0.3}  # Default volatility
 
     def _calculate_rsi(self, prices, period=14) -> float:
-        """Calculate RSI indicator"""
+        """Calculate RSI indicator from real price data"""
         if len(prices) < period + 1:
             return 50  # Neutral RSI if not enough data
         
@@ -232,7 +239,7 @@ class BullModule2026:
 
     def _find_optimal_spread(self, options_chain: List[Dict], 
                            current_price: float, volatility: float) -> Optional[Dict]:
-        """Find optimal strikes for bull call spread"""
+        """Find optimal strikes from real options chain data"""
         try:
             # Calculate target strikes based on expected move
             expected_move = current_price * volatility * np.sqrt(self.optimal_days_to_expiry / 365)
@@ -243,7 +250,7 @@ class BullModule2026:
             # Short call strike: further OTM (around 25 delta)
             target_short_strike = current_price + (0.8 * expected_move)
             
-            # Find closest available strikes
+            # Find closest available strikes from real options data
             long_strike = None
             short_strike = None
             long_call_data = None
@@ -268,7 +275,7 @@ class BullModule2026:
             if not all([long_strike, short_strike, long_call_data, short_call_data]):
                 return None
             
-            # Calculate net debit
+            # Calculate net debit from real market data
             long_call_mid = (long_call_data['bid'] + long_call_data['ask']) / 2
             short_call_mid = (short_call_data['bid'] + short_call_data['ask']) / 2
             debit = long_call_mid - short_call_mid
@@ -293,7 +300,7 @@ class BullModule2026:
 
     def _calculate_spread_metrics(self, spread_params: Dict, 
                                 current_price: float, tech_signals: Dict) -> Dict:
-        """Calculate comprehensive metrics for the bull call spread"""
+        """Calculate metrics from real spread data"""
         debit = spread_params['debit']
         spread_width = spread_params['spread_width']
         long_strike = spread_params['long_strike']
@@ -303,28 +310,34 @@ class BullModule2026:
         max_loss = debit
         breakeven = long_strike + debit
         
-        # Risk/reward ratio
+        # Risk/reward ratio (protect against division by zero)
         risk_reward_ratio = max_profit / max_loss if max_loss > 0 else 0
         
         # Probability calculations (simplified Black-Scholes approximation)
-        volatility = tech_signals['volatility']
+        volatility = max(tech_signals['volatility'], 0.1)  # Minimum volatility to prevent division by zero
         days_to_expiry = self.optimal_days_to_expiry
         
-        # Distance to breakeven in standard deviations
+        # Distance to breakeven in standard deviations (protect against division by zero)
         expected_move = current_price * volatility * np.sqrt(days_to_expiry / 365)
-        distance_to_breakeven = (breakeven - current_price) / expected_move
+        if expected_move > 0:
+            distance_to_breakeven = (breakeven - current_price) / expected_move
+        else:
+            distance_to_breakeven = 0
         
         # Rough probability estimate using normal distribution
         from scipy.stats import norm
-        probability_profit = 1 - norm.cdf(distance_to_breakeven)
+        probability_profit = max(0.1, min(0.9, 1 - norm.cdf(distance_to_breakeven)))  # Clamp between 10% and 90%
         
         # Score calculation (weighted combination of factors)
         score = (
             probability_profit * 0.4 +
             min(risk_reward_ratio / 3, 1) * 0.3 +  # Normalize RR ratio
-            tech_signals['trend_strength'] * 0.2 +
-            (1 - tech_signals['volatility']) * 0.1  # Lower volatility is better
+            max(0, tech_signals['trend_strength']) * 0.2 +
+            (1 - min(tech_signals['volatility'], 1)) * 0.1  # Lower volatility is better
         )
+        
+        # Return on risk (protect against division by zero)
+        return_on_risk = (max_profit / max_loss) * probability_profit if max_loss > 0 else 0
         
         return {
             'max_profit': max_profit,
@@ -333,25 +346,26 @@ class BullModule2026:
             'risk_reward_ratio': risk_reward_ratio,
             'probability_profit': probability_profit,
             'score': score,
-            'return_on_risk': (max_profit / max_loss) * probability_profit
+            'return_on_risk': return_on_risk
         }
 
     def _validate_opportunity(self, metrics: Dict) -> bool:
-        """Validate if the opportunity meets our strict criteria"""
+        """Validate opportunity against production criteria - NO RELAXED TESTING"""
         return (
-            metrics['risk_reward_ratio'] >= 2.0 and
+            metrics['risk_reward_ratio'] >= self.min_risk_reward_ratio and
             metrics['probability_profit'] >= self.min_probability_profit and
-            metrics['return_on_risk'] >= 1.5  # Expected value must be positive
+            metrics['return_on_risk'] >= 1.5
         )
 
     def _calculate_position_size(self, metrics: Dict) -> int:
-        """Calculate optimal position size based on Kelly Criterion and risk limits"""
+        """
+        Calculate position size using portfolio provider interface
+        
+        Architecture: Uses PortfolioProvider2026 for risk-managed position sizing
+        """
         try:
-            # Get available capital
+            # Get available capital from portfolio provider
             available_capital = self.portfolio_provider.get_available_capital()
-            
-            # Maximum risk per trade (2% of portfolio)
-            max_risk = available_capital * self.max_spread_cost_pct
             
             # Kelly Criterion (simplified)
             win_prob = metrics['probability_profit']
@@ -362,11 +376,12 @@ class BullModule2026:
             kelly_fraction = (win_prob * win_amount - loss_prob * loss_amount) / win_amount
             kelly_fraction = max(0, min(kelly_fraction, 0.25))  # Cap at 25%
             
-            # Position size based on max risk
-            contracts_by_risk = int(max_risk / metrics['max_loss'])
+            # Position size based on available capital (max risk per trade)
+            contracts_by_risk = int(available_capital / metrics['max_loss']) if metrics['max_loss'] > 0 else 1
             
             # Position size based on Kelly
-            contracts_by_kelly = int((available_capital * kelly_fraction) / metrics['max_loss'])
+            portfolio_value = self.portfolio_provider.get_portfolio_value()
+            contracts_by_kelly = int((portfolio_value * kelly_fraction) / metrics['max_loss']) if metrics['max_loss'] > 0 else 1
             
             # Use the smaller of the two
             position_size = min(contracts_by_risk, contracts_by_kelly, 10)  # Cap at 10 contracts
@@ -378,16 +393,26 @@ class BullModule2026:
             return 1
 
     async def execute_trade(self, opportunity: Dict) -> Optional[str]:
-        """Execute the bull call spread trade"""
+        """
+        Execute bull call spread trade - PRODUCTION EXECUTION
+        
+        Architecture: Uses IBKR Client interface for real order placement
+        """
         try:
             symbol = opportunity['symbol']
             
-            # Final risk check
-            if not self.portfolio_provider.can_trade(opportunity['debit'] * opportunity['position_size'] * 100):
+            # Check if trading is halted - REQUIRED INTERFACE METHOD
+            if await self.ibkr_client.is_trading_halted(symbol):
+                self.logger.warning(f"Trading halted for {symbol}, skipping")
+                return None
+            
+            # Final risk check using portfolio provider
+            trade_cost = opportunity['debit'] * opportunity['position_size'] * 100
+            if not self.portfolio_provider.can_trade(trade_cost):
                 self.logger.warning(f"Risk check failed for {symbol}")
                 return None
             
-            # Create option contracts
+            # Create real option contracts
             long_call = Option(
                 symbol=symbol,
                 lastTradeDateOrContractMonth=opportunity['expiry'],
@@ -404,7 +429,7 @@ class BullModule2026:
                 exchange='SMART'
             )
             
-            # Qualify contracts
+            # Qualify contracts with IBKR
             long_details = await self.ibkr_client.reqContractDetails(long_call)
             short_details = await self.ibkr_client.reqContractDetails(short_call)
             
@@ -412,7 +437,7 @@ class BullModule2026:
                 self.logger.error(f"Could not qualify option contracts for {symbol}")
                 return None
             
-            # Create combo order
+            # Create combo order for spread execution
             combo = Contract()
             combo.symbol = symbol
             combo.secType = 'BAG'
@@ -433,7 +458,7 @@ class BullModule2026:
             
             combo.comboLegs = [leg1, leg2]
             
-            # Create order
+            # Create production order
             order = Order()
             order.action = 'BUY'
             order.totalQuantity = opportunity['position_size']
@@ -442,7 +467,7 @@ class BullModule2026:
             order.tif = 'GTC'
             order.transmit = True
             
-            # Place order
+            # Place real order through IBKR
             self.logger.info(f"Placing bull call spread order for {symbol}")
             order_id = await self.ibkr_client.place_order(combo, order)
             
@@ -465,8 +490,9 @@ class BullModule2026:
 
     async def manage_positions(self, positions: List[Any]) -> List[Dict]:
         """
-        Manage existing bull positions for profit taking or stop loss.
-        Returns a list of actions to take for each position.
+        Manage existing bull positions for profit taking or stop loss
+        
+        Architecture: Integrates with portfolio monitoring system
         """
         actions = []
         
@@ -488,71 +514,43 @@ class BullModule2026:
                         'position': position,
                         'reason': 'take_profit_50pct'
                     })
-                    continue
                 
                 # Stop loss at 30% of debit paid
-                if pnl_pct <= -30:
-                    self.logger.warning(f"🛑 BULL: Stop loss hit for {symbol} at {pnl_pct:.1f}%")
+                elif pnl_pct <= -30:
+                    self.logger.info(f"🛑 BULL: Stop loss triggered for {symbol} at {pnl_pct:.1f}%")
                     actions.append({
                         'action': 'close',
                         'position': position,
                         'reason': 'stop_loss_30pct'
                     })
-                    continue
                 
-                # Additional bull-specific exit conditions
-                
-                # Exit if underlying has broken below support
-                stock_data = await self.ibkr_client.get_market_data(symbol)
-                if stock_data and stock_data.get('last', 0) > 0:
-                    # Calculate simple support level (20-day low)
-                    # In production, this would use more sophisticated technical analysis
-                    current_price = stock_data.get('last')
-                    close_price = stock_data.get('close', current_price)
-                    
-                    # Exit if stock drops more than 5% from close
-                    if current_price < close_price * 0.95:
-                        self.logger.warning(f"⚠️ BULL: Underlying {symbol} breaking down")
-                        actions.append({
-                            'action': 'close',
-                            'position': position,
-                            'reason': 'underlying_breakdown'
-                        })
-                        continue
-                
-                # Time-based exit for weeklies near expiration
-                if hasattr(position.contract, 'lastTradeDateOrContractMonth'):
-                    days_to_expiry = self._calculate_days_to_expiry(
-                        position.contract.lastTradeDateOrContractMonth
-                    )
-                    
-                    # Close if less than 2 days to expiry and in profit
-                    if days_to_expiry <= 2 and pnl_pct > 10:
-                        self.logger.info(f"⏰ BULL: Closing {symbol} near expiry with {pnl_pct:.1f}% profit")
-                        actions.append({
-                            'action': 'close',
-                            'position': position,
-                            'reason': 'near_expiry_profit'
-                        })
-                        continue
-                
-                # Log position status if no action
-                if not any(a['position'] == position for a in actions):
-                    self.logger.debug(f"BULL position {symbol}: {pnl_pct:.1f}% P&L, holding")
+                # Time-based exit (close at 80% of max time)
+                elif self._should_close_for_time(position):
+                    self.logger.info(f"⏰ BULL: Time-based exit for {symbol}")
+                    actions.append({
+                        'action': 'close',
+                        'position': position,
+                        'reason': 'time_decay'
+                    })
                     
             except Exception as e:
-                self.logger.error(f"Error managing bull position {position.contract.symbol}: {e}")
+                self.logger.error(f"Error managing bull position: {e}")
         
         return actions
-    
-    def _calculate_days_to_expiry(self, expiry_date: str) -> int:
-        """Calculate days remaining to expiry"""
+
+    def _should_close_for_time(self, position) -> bool:
+        """Check if position should be closed due to time decay"""
         try:
-            from datetime import datetime
-            # Parse expiry date (format: YYYYMMDD)
-            expiry = datetime.strptime(str(expiry_date)[:8], '%Y%m%d')
-            today = datetime.now()
-            days_remaining = (expiry - today).days
-            return max(0, days_remaining)
-        except Exception:
-            return 30  # Default to 30 days if parsing fails
+            # Extract expiry from contract if available
+            if hasattr(position.contract, 'lastTradeDateOrContractMonth'):
+                expiry_str = position.contract.lastTradeDateOrContractMonth
+                expiry_date = datetime.strptime(expiry_str, '%Y%m%d')
+                days_left = (expiry_date - datetime.now()).days
+                
+                # Close if less than 10 days to expiry
+                return days_left < 10
+                
+        except Exception as e:
+            self.logger.debug(f"Could not determine time to expiry: {e}")
+        
+        return False

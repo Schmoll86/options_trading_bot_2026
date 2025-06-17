@@ -50,6 +50,7 @@ class VolatileModule2026:
         self.condor_iv_threshold = 20  # SUPER RELAXED: Minimal IV needed
         self.max_vega_exposure = 1000  # Maximum vega per position
         self.delta_neutral_threshold = 0.10  # Keep delta within +/- 10
+        self.max_contracts_per_trade = 10  # Maximum contracts per single trade
 
     async def scan_opportunities(self, symbols: List[str], market_sentiment: Dict = None) -> List[Dict]:
         """
@@ -109,8 +110,8 @@ class VolatileModule2026:
         # Also allow if market is marked as volatile
         is_volatile_market = market_sentiment.get('volatile', False)
         
-        # RELAXED: Allow trading in more conditions
-        return volatility_expected or low_directional_confidence or mixed_signals or is_volatile_market or True  # Always allow for testing
+        # Trader only proceeds when at least one real-world volatility signal is present
+        return volatility_expected or low_directional_confidence or mixed_signals or is_volatile_market
 
     async def _analyze_symbol(self, symbol: str, market_sentiment: Dict) -> Optional[Dict]:
         """Analyze a single symbol for volatility trading opportunity"""
@@ -674,41 +675,58 @@ class VolatileModule2026:
         """Validate if the opportunity meets criteria"""
         if strategy_type in ['straddle', 'strangle']:
             return (
-                metrics['probability_profit'] >= 0.20 and  # SUPER RELAXED: 20% chance
-                metrics['risk_reward_ratio'] >= 0.1 and  # SUPER RELAXED: Any positive RR
+                metrics['probability_profit'] >= 0.20 and  # 20% chance
+                metrics['risk_reward_ratio'] >= 0.1 and  # Positive risk/reward
                 metrics['iv_to_hv_ratio'] >= self.min_iv_to_hv_ratio and
-                metrics['return_on_risk'] >= 0.05  # SUPER RELAXED: 5% return
+                metrics['return_on_risk'] >= 0.05  # 5% return
             )
         else:  # iron_condor
             return (
-                metrics['probability_profit'] >= 0.25 and  # SUPER RELAXED: 25% chance
-                metrics['risk_reward_ratio'] >= 0.05 and  # SUPER RELAXED: Minimal RR
-                metrics['credit_as_pct_of_width'] >= 0.05 and  # SUPER RELAXED: Any credit
-                metrics['return_on_risk'] >= 0.02  # SUPER RELAXED: 2% return
+                metrics['probability_profit'] >= 0.25 and  # 25% chance
+                metrics['risk_reward_ratio'] >= 0.05 and  # Minimal RR
+                metrics['credit_as_pct_of_width'] >= 0.05 and  # 5% credit
+                metrics['return_on_risk'] >= 0.02  # 2% return
             )
 
     def _calculate_position_size(self, metrics: Dict, strategy_type: str) -> int:
         """Calculate position size for volatility strategies"""
         try:
+            # Get available capital from portfolio provider
             available_capital = self.portfolio_provider.get_available_capital()
             max_risk = available_capital * self.max_position_cost_pct
             
-            # Position size based on max loss
+            # Position size based on max loss (protect against division by zero)
             if strategy_type in ['straddle', 'strangle']:
                 # For long strategies, max loss is the debit paid
-                contracts = int(max_risk / (metrics['max_loss'] * 100))
+                contracts = int(max_risk / max(metrics['max_loss'] * 100, 1))
             else:  # iron_condor
-                # For credit strategies, use the max loss
-                contracts = int(max_risk / (metrics['max_loss'] * 100))
+                # For short strategies, max loss is the spread width minus credit
+                contracts = int(max_risk / max(metrics['max_loss'] * 100, 1))
             
-            # Apply Kelly Criterion with conservative factor
-            kelly_fraction = metrics['return_on_risk'] * 0.25  # Very conservative
-            kelly_contracts = int((available_capital * kelly_fraction) / (metrics['max_loss'] * 100))
+            # Apply Kelly Criterion for sizing
+            win_prob = metrics['probability_profit']
+            loss_prob = 1 - win_prob
             
-            # Use the smaller of the two
-            position_size = min(contracts, kelly_contracts, 5)  # Cap at 5 for volatility trades
+            if strategy_type in ['straddle', 'strangle']:
+                win_amount = metrics.get('expected_profit', 0)
+                loss_amount = metrics['max_loss']
+            else:
+                win_amount = metrics['max_profit']
+                loss_amount = metrics['max_loss']
             
-            return max(1, position_size)
+            # Kelly fraction (protect against division by zero)
+            if win_amount > 0:
+                kelly_fraction = (win_prob * win_amount - loss_prob * loss_amount) / win_amount
+                kelly_fraction = max(0, min(kelly_fraction, 0.25))  # Cap at 25%
+                
+                kelly_contracts = int((available_capital * kelly_fraction) / max(loss_amount * 100, 1))
+                contracts = min(contracts, kelly_contracts)
+            
+            # Final constraints
+            contracts = min(contracts, self.max_contracts_per_trade)
+            contracts = max(1, contracts)  # At least 1 contract
+            
+            return contracts
             
         except Exception as e:
             self.logger.error(f"Error calculating position size: {e}")
@@ -726,6 +744,11 @@ class VolatileModule2026:
             strategy = opportunity['strategy']
             setup = opportunity['setup']
             position_size = opportunity['position_size']
+            
+            # Check if trading is halted
+            if await self.ibkr_client.is_trading_halted(symbol):
+                self.logger.warning(f"Trading halted for {symbol}, skipping")
+                return None
             
             # Final risk check
             max_risk = opportunity['metrics']['max_loss'] * position_size * 100

@@ -35,7 +35,7 @@ class BotMonitorServer:
             },
             'health_metrics': {
                 'ibkr_connection': False,
-                'portfolio_monitor': False,
+                'portfolio_provider': False,
                 'execution_engine': False,
                 'risk_manager': False,
                 'news_handler': False,

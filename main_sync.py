@@ -75,13 +75,14 @@ class OptionsTradingBot2026:
             account_value = self.ibkr_client.get_account_value()
             self.logger.info(f"Account value: ${account_value:,.2f}")
             
-            # Initialize portfolio provider
-            self.portfolio_provider = PortfolioProvider2026(self.ibkr_client)
-            
-            # Initialize risk manager with portfolio value
+            # Initialize risk manager with portfolio value and config
             self.risk_manager = RiskManager2026(
-                portfolio_value=account_value if account_value > 0 else self.config.get('INITIAL_PORTFOLIO_VALUE', 10000)
+                account_value if account_value > 0 else self.config.get('INITIAL_PORTFOLIO_VALUE', 10000),
+                config=self.config
             )
+            
+            # Initialize portfolio provider
+            self.portfolio_provider = PortfolioProvider2026(self.risk_manager)
             self.logger.info("Risk management initialized")
             
             # Initialize portfolio monitor (only needs risk_manager and ibkr_client)

@@ -237,8 +237,9 @@ class OptionsTradingBot2026:
             await self.ibkr_client.connect()
             self.logger.info("Connected to IBKR Gateway")
             
-            # Initialize risk management
-            self.risk_manager = RiskManager2026(self.ibkr_client)
+            # Initialize risk management with real portfolio value (live account) and config
+            portfolio_val = await self.ibkr_client.get_account_value()
+            self.risk_manager = RiskManager2026(portfolio_val, config=self.config.get_all_config())
             self.portfolio_provider = PortfolioProvider2026(self.risk_manager)
             self.portfolio_monitor = PortfolioMonitor2026(self.risk_manager, self.ibkr_client)
             self.logger.info("Risk management initialized")

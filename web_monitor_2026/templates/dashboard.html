@@ -208,12 +208,71 @@
         </div>
 
         <div class="row mt-4">
+            <!-- Market Sentiment -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Market Sentiment</h5>
+                        <small class="text-muted">Real-time market analysis</small>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="current-sentiment">NEUTRAL</div>
+                                    <div class="metric-label">Current Sentiment</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="spy-change">0.00%</div>
+                                    <div class="metric-label">SPY Change</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="spy-price">$0.00</div>
+                                    <div class="metric-label">SPY Price</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="vix-level">0.00</div>
+                                    <div class="metric-label">VIX Level</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <small class="text-muted">Last updated: <span id="sentiment-last-update">Never</span></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Health Status -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">System Health</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="health-status">
+                            <!-- Health status will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
             <!-- Stock Screening Results -->
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header">
                         <h5 class="card-title mb-0">Stock Screening Results</h5>
-                        <small class="text-muted">Real-time stock analysis</small>
+                        <small class="text-muted">Sophisticated S&P 500 analysis with 300+ stocks</small>
                     </div>
                     <div class="card-body">
                         <div class="row">
@@ -289,12 +348,93 @@
             const riskMetricsContainer = document.getElementById('risk-metrics');
             riskMetricsContainer.innerHTML = createRiskMetrics(data.risk_metrics);
 
+            // Update market sentiment
+            if (data.market_sentiment) {
+                updateMarketSentiment(data.market_sentiment);
+            }
+
+            // Update health status
+            if (data.health_metrics) {
+                updateHealthStatus(data.health_metrics);
+            }
+
             // Update stock screening results
             if (data.screening_results) {
                 updateScreeningResults(data.screening_results);
             }
 
             lastUpdate = new Date(data.last_update);
+        }
+
+        function updateMarketSentiment(sentimentData) {
+            // Update current sentiment with color coding
+            const sentimentElement = document.getElementById('current-sentiment');
+            const sentiment = sentimentData.current_sentiment || 'NEUTRAL';
+            sentimentElement.textContent = sentiment.toUpperCase();
+            
+            // Color code sentiment
+            sentimentElement.className = 'metric-value';
+            if (sentiment.toLowerCase().includes('bull')) {
+                sentimentElement.style.color = '#28a745'; // Green
+            } else if (sentiment.toLowerCase().includes('bear')) {
+                sentimentElement.style.color = '#dc3545'; // Red
+            } else if (sentiment.toLowerCase().includes('volatile')) {
+                sentimentElement.style.color = '#ffc107'; // Yellow
+            } else {
+                sentimentElement.style.color = '#6c757d'; // Gray
+            }
+
+            // Update SPY data
+            const spyPrice = sentimentData.spy_last || 0;
+            const spyChange = sentimentData.spy_change || 0;
+            
+            document.getElementById('spy-price').textContent = formatCurrency(spyPrice);
+            
+            const spyChangeElement = document.getElementById('spy-change');
+            const changePercent = (spyChange * 100).toFixed(2);
+            spyChangeElement.textContent = (changePercent >= 0 ? '+' : '') + changePercent + '%';
+            spyChangeElement.style.color = spyChange >= 0 ? '#28a745' : '#dc3545';
+
+            // Update VIX level
+            const vixLevel = sentimentData.vix_level || 0;
+            const vixElement = document.getElementById('vix-level');
+            vixElement.textContent = vixLevel.toFixed(2);
+            vixElement.style.color = vixLevel > 20 ? '#dc3545' : '#28a745';
+
+            // Update last update time
+            if (sentimentData.last_update) {
+                document.getElementById('sentiment-last-update').textContent = 
+                    new Date(sentimentData.last_update).toLocaleTimeString();
+            }
+        }
+
+        function updateHealthStatus(healthData) {
+            const healthContainer = document.getElementById('health-status');
+            
+            const healthItems = [
+                { key: 'ibkr_connection', label: 'IBKR Connection' },
+                { key: 'execution_engine', label: 'Execution Engine' },
+                { key: 'risk_manager', label: 'Risk Manager' },
+                { key: 'portfolio_provider', label: 'Portfolio Provider' },
+                { key: 'news_handler', label: 'News Handler' },
+                { key: 'stock_screener', label: 'Stock Screener' }
+            ];
+
+            const healthHtml = healthItems.map(item => {
+                const status = healthData[item.key] || false;
+                const statusClass = status ? 'text-success' : 'text-danger';
+                const statusIcon = status ? '✅' : '❌';
+                const statusText = status ? 'Online' : 'Offline';
+                
+                return `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>${item.label}</span>
+                        <span class="${statusClass}">${statusIcon} ${statusText}</span>
+                    </div>
+                `;
+            }).join('');
+
+            healthContainer.innerHTML = healthHtml;
         }
 
         function updateScreeningResults(screeningData) {

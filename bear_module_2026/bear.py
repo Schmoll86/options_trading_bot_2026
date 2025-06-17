@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from ib_insync import Option, ComboLeg, Contract, Order, Stock
 import numpy as np
+from scipy.stats import norm
 
 class BearModule2026:
     """
@@ -93,7 +94,7 @@ class BearModule2026:
                 symbol, duration='60 D', bar_size='1 day'
             )
             
-            if hist_data is None or hist_data.empty:
+            if hist_data is None or len(hist_data) == 0:
                 return None
             
             # Calculate technical indicators
@@ -332,7 +333,6 @@ class BearModule2026:
         distance_to_breakeven = (current_price - breakeven) / expected_move
         
         # Rough probability estimate using normal distribution
-        from scipy.stats import norm
         probability_profit = norm.cdf(distance_to_breakeven)
         
         # Adjust probability based on trend strength
@@ -368,11 +368,8 @@ class BearModule2026:
     def _calculate_position_size(self, metrics: Dict) -> int:
         """Calculate optimal position size based on Kelly Criterion and risk limits"""
         try:
-            # Get available capital
+            # Get available capital from portfolio provider
             available_capital = self.portfolio_provider.get_available_capital()
-            
-            # Maximum risk per trade (2% of portfolio)
-            max_risk = available_capital * self.max_spread_cost_pct
             
             # Kelly Criterion (simplified)
             win_prob = metrics['probability_profit']
@@ -383,11 +380,12 @@ class BearModule2026:
             kelly_fraction = (win_prob * win_amount - loss_prob * loss_amount) / win_amount
             kelly_fraction = max(0, min(kelly_fraction, 0.25))  # Cap at 25%
             
-            # Position size based on max risk
-            contracts_by_risk = int(max_risk / metrics['max_loss'])
+            # Position size based on max risk (2% of portfolio per trade)
+            max_risk = available_capital * self.max_spread_cost_pct
+            contracts_by_risk = int(max_risk / max(metrics['max_loss'], 0.01))  # Avoid division by zero
             
             # Position size based on Kelly
-            contracts_by_kelly = int((available_capital * kelly_fraction) / metrics['max_loss'])
+            contracts_by_kelly = int((available_capital * kelly_fraction) / max(metrics['max_loss'], 0.01))
             
             # Use the smaller of the two
             position_size = min(contracts_by_risk, contracts_by_kelly, 10)  # Cap at 10 contracts
@@ -403,8 +401,14 @@ class BearModule2026:
         try:
             symbol = opportunity['symbol']
             
-            # Final risk check
-            if not self.portfolio_provider.can_trade(opportunity['debit'] * opportunity['position_size'] * 100):
+            # Check if trading is halted
+            if await self.ibkr_client.is_trading_halted(symbol):
+                self.logger.warning(f"Trading halted for {symbol}, skipping")
+                return None
+            
+            # Final risk check using portfolio provider
+            trade_cost = opportunity['debit'] * opportunity['position_size'] * 100
+            if not self.portfolio_provider.can_trade(trade_cost):
                 self.logger.warning(f"Risk check failed for {symbol}")
                 return None
             

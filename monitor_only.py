@@ -46,9 +46,10 @@ async def monitor_market():
         # Get initial account value
         account_value = await client.get_account_value()
         
-        # Initialize risk manager with portfolio value
+        # Initialize risk manager with portfolio value and config
         risk_manager = RiskManager2026(
-            portfolio_value=account_value if account_value > 0 else config.get('initial_portfolio_value', 10000)
+            account_value if account_value > 0 else config.get('initial_portfolio_value', 10000),
+            config=config.get_all_config()
         )
         
         # Initialize portfolio provider

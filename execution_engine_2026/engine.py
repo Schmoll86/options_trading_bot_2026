@@ -155,6 +155,12 @@ class ExecutionEngine2026:
                 
                 if trade_id:
                     self._last_execution_time = datetime.now()
+                    # Inform risk manager of the new open position
+                    if hasattr(self.risk_manager, 'register_open_position'):
+                        try:
+                            self.risk_manager.register_open_position(opportunity['symbol'])
+                        except Exception as err:
+                            self.logger.debug(f"Risk manager register_open_position failed: {err}")
                     self.logger.info(f"✅ Executed {strategy_type} for {opportunity['symbol']}: {trade_id}")
                     return True
                 

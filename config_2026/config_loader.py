@@ -49,3 +49,8 @@ class ConfigLoader2026:
             'MAX_TRADE_SIZE_PCT': self.get('MAX_TRADE_SIZE_PCT', 0.10),
             'LOG_LEVEL': self.get('LOG_LEVEL', 'INFO')
         }
+
+
+def load_config():
+    """Load configuration - convenience function"""
+    return ConfigLoader2026().get_all_config()

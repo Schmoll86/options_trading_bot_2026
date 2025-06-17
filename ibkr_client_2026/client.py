@@ -371,8 +371,62 @@ class IBKRClient2026:
             return []
 
     async def reqNewsArticle(self, symbol: str):
-        """Get news for a symbol - using a mock implementation since IBKR news requires special permissions."""
-        # Note: Real IBKR news requires news subscriptions
-        # For now, return empty list to avoid errors
-        self.logger.debug(f"News requested for {symbol} - returning empty (news subscriptions required)")
-        return []
+        """Retrieve recent news articles for *symbol* via IBKR Historical News API.
+
+        Returns a list of `ib_insync.objects.NewsArticle`.  Requires that your
+        account has the *News* subscription enabled in TWS / Gateway.
+        """
+        try:
+            # 1) Retrieve available news providers once and cache them
+            if not hasattr(self, '_news_providers_cache'):
+                providers = await self.ib.reqNewsProvidersAsync()
+                self._news_providers_cache = providers or []
+
+            if not self._news_providers_cache:
+                self.logger.warning("No news providers returned; is the News subscription enabled?")
+                return []
+
+            # Prefer real-time breaking news provider (e.g., 'BRFG') or the first provider
+            provider_code = None
+            for p in self._news_providers_cache:
+                if p.code.upper().startswith('BRF'):
+                    provider_code = p.code
+                    break
+            if provider_code is None:
+                provider_code = self._news_providers_cache[0].code
+
+            # 2) Qualify contract to obtain conId
+            contract_details = await self.reqContractDetails(Stock(symbol, 'SMART', 'USD'))
+            if not contract_details:
+                self.logger.warning(f"Cannot qualify contract for {symbol}; skipping news fetch")
+                return []
+            con_id = contract_details[0].contract.conId
+
+            # 3) Fetch historical news headlines (latest 10)
+            headlines = await self.ib.reqHistoricalNewsAsync(
+                conId=con_id,
+                providerCodes=provider_code,
+                startDateTime='',   # empty string = now
+                endDateTime='',
+                totalResults=10,
+                useTimeZone=False
+            )
+
+            if not headlines:
+                return []
+
+            # 4) For each headline, request full article text (optional)
+            articles = []
+            for h in headlines:
+                try:
+                    article = await self.ib.reqNewsArticleAsync(h.providerCode, h.articleId)
+                    articles.append(article)
+                except Exception as inner_exc:
+                    self.logger.debug(f"Unable to fetch article {h.articleId}: {inner_exc}")
+                    continue
+
+            return articles
+
+        except Exception as e:
+            self.logger.error(f"Error fetching news for {symbol}: {e}")
+            return []

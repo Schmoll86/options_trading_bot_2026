@@ -122,21 +122,12 @@ class SyncExecutionEngine2026:
         hour = et_time.hour
         minute = et_time.minute
         
-        # Convert to minutes since midnight in ET
+        # Convert to minutes for easier comparison
         current_minutes = hour * 60 + minute
-        market_open = 9 * 60 + 30  # 9:30 AM ET
-        market_close = 16 * 60  # 4:00 PM ET
+        market_open = 9 * 60 + 30  # 9:30 AM
+        market_close = 16 * 60     # 4:00 PM
         
-        is_open = market_open <= current_minutes <= market_close
-        
-        if is_open and not hasattr(self, '_market_open_logged'):
-            self.logger.info(f"🔔 Market is OPEN! ET time: {et_time.strftime('%I:%M %p')}")
-            self._market_open_logged = True
-        elif not is_open and hasattr(self, '_market_open_logged'):
-            # Reset the flag when market closes
-            delattr(self, '_market_open_logged')
-            
-        return is_open
+        return market_open <= current_minutes <= market_close
         
     def _execute_trading_cycle(self):
         """Execute one complete trading cycle"""
@@ -149,6 +140,17 @@ class SyncExecutionEngine2026:
             sentiment = self._analyze_sentiment()
             self.logger.info(f"Market sentiment: {sentiment}")
             
+            # Update web monitor with market sentiment
+            if self.web_monitor:
+                sentiment_data = {
+                    'current_sentiment': sentiment.value,
+                    'last_update': datetime.now().isoformat(),
+                    'spy_last': getattr(self, '_last_spy_price', 0),
+                    'spy_change': getattr(self, '_last_spy_change', 0),
+                    'vix_level': getattr(self, '_last_vix_level', 0)
+                }
+                self.web_monitor.update_market_sentiment(sentiment_data)
+            
             # Step 2: Screen stocks based on sentiment
             self.logger.debug("Screening stocks...")
             candidates = self._screen_stocks(sentiment)
@@ -156,6 +158,12 @@ class SyncExecutionEngine2026:
             
             if not candidates:
                 self.logger.info("No suitable candidates found")
+                # Log this as an action for monitoring
+                if self.web_monitor:
+                    self.web_monitor.add_trade_action(
+                        'scan', 'MARKET', 'screening', 
+                        {'result': 'no_candidates', 'sentiment': sentiment.value}
+                    )
                 return
                 
             # Step 3: Execute appropriate strategy
@@ -174,6 +182,13 @@ class SyncExecutionEngine2026:
             
         except Exception as e:
             self.logger.error(f"Error in trading cycle: {e}", exc_info=True)
+            # Log error to web monitor
+            if self.web_monitor:
+                self.web_monitor.add_error(
+                    'trading_cycle_error', 
+                    str(e), 
+                    {'phase': 'trading_cycle', 'timestamp': datetime.now().isoformat()}
+                )
             # Don't re-raise the exception - let the bot continue running
             return
             
@@ -183,6 +198,11 @@ class SyncExecutionEngine2026:
             # Analyze market sentiment
             self.logger.debug("Analyzing sentiment...")
             self.logger.debug("Getting SPY market data...")
+            
+            # Initialize defaults for web monitor
+            self._last_spy_price = 0
+            self._last_spy_change = 0
+            self._last_vix_level = 0
             
             # Add timeout protection and better error handling
             try:
@@ -201,12 +221,17 @@ class SyncExecutionEngine2026:
             last_price = spy_data.get('last', 0)
             close_price = spy_data.get('close', 0)
             
+            # Store for web monitor
+            self._last_spy_price = last_price
+            
             # If we don't have close price, use last price with small threshold
             if close_price == 0 or close_price == last_price:
                 self.logger.debug("No close price available, using neutral sentiment")
                 market_trend = MarketCondition.NEUTRAL
+                self._last_spy_change = 0
             else:
                 change_pct = (last_price - close_price) / close_price
+                self._last_spy_change = change_pct
                 self.logger.info(f"SPY change: {change_pct:.3%} (Last: ${last_price:.2f}, Close: ${close_price:.2f})")
                 
                 # Simple 0.5% threshold (reduced from 1%)
@@ -226,6 +251,7 @@ class SyncExecutionEngine2026:
                 
                 if vix_data and vix_data.get('last') and vix_data['last'] > 0:
                     vix_level = vix_data['last']
+                    self._last_vix_level = vix_level  # Store for web monitor
                     self.logger.info(f"VIX level: {vix_level:.2f}")
                     # High VIX = high volatility
                     if vix_level > 20:
@@ -252,43 +278,85 @@ class SyncExecutionEngine2026:
     def _screen_stocks(self, sentiment: MarketCondition) -> List[str]:
         """Screen stocks based on market condition"""
         try:
-            # Use simple sync screener for now to avoid async complexity
-            # This is a temporary fix until we properly integrate async/sync
-            from simple_sync_screener import SimpleSyncScreener
-            
-            # Create market sentiment dict
+            # Create market sentiment dict for sophisticated screener
             market_sentiment = {
                 'sentiment_score': 0.0,
                 'bullish': sentiment == MarketCondition.BULLISH,
                 'bearish': sentiment == MarketCondition.BEARISH,
-                'volatile': sentiment in [MarketCondition.VOLATILE, MarketCondition.HIGH_VOLATILITY],  # Include HIGH_VOLATILITY
+                'volatile': sentiment in [MarketCondition.VOLATILE, MarketCondition.HIGH_VOLATILITY],
                 'neutral': sentiment == MarketCondition.NEUTRAL,
-                'volatility_expected': 0.7 if sentiment == MarketCondition.HIGH_VOLATILITY else 0.3  # Add for volatility strategy
+                'volatility_expected': 0.7 if sentiment == MarketCondition.HIGH_VOLATILITY else 0.3
             }
             
-            # Use simple screener
+            # Use sophisticated StockScreener2026 (passed in constructor)
+            self.logger.info("Using sophisticated StockScreener2026 with full S&P 500 universe")
+            
+            # Run async screening in sync context
+            import asyncio
+            import nest_asyncio
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Use the sophisticated screener's screen_stocks method
+                candidates = loop.run_until_complete(
+                    self.stock_screener.screen_stocks(market_sentiment)
+                )
+                
+                self.logger.info(f"Sophisticated screener found {len(candidates)} candidates: {candidates[:5]}...")
+                
+                # Update web monitor with sophisticated screening results if available
+                if self.web_monitor and candidates:
+                    # Get full screening results for web display
+                    try:
+                        full_results = loop.run_until_complete(
+                            self._get_full_screening_results_sync(market_sentiment)
+                        )
+                        if full_results:
+                            self.web_monitor.update_screening_results(full_results)
+                    except Exception as e:
+                        self.logger.warning(f"Could not update web screening results: {e}")
+                
+                return candidates
+                
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            self.logger.error(f"Error with sophisticated screener: {e}")
+            # Fallback to simple screener only if sophisticated fails
+            self.logger.warning("Falling back to simple screener")
+            return self._fallback_screen_stocks(sentiment)
+            
+    def _fallback_screen_stocks(self, sentiment: MarketCondition) -> List[str]:
+        """Fallback screening using simple screener if sophisticated fails"""
+        try:
+            from simple_sync_screener import SimpleSyncScreener
+            
+            market_sentiment = {
+                'sentiment_score': 0.0,
+                'bullish': sentiment == MarketCondition.BULLISH,
+                'bearish': sentiment == MarketCondition.BEARISH,
+                'volatile': sentiment in [MarketCondition.VOLATILE, MarketCondition.HIGH_VOLATILITY],
+                'neutral': sentiment == MarketCondition.NEUTRAL,
+                'volatility_expected': 0.7 if sentiment == MarketCondition.HIGH_VOLATILITY else 0.3
+            }
+            
             simple_screener = SimpleSyncScreener(self.ibkr_client)
             candidates = simple_screener.screen_stocks(market_sentiment)
             
-            # Update web monitor with basic screening results
-            if self.web_monitor and candidates:
-                screening_data = {
-                    'bull': [(c, 0.5, i+1) for i, c in enumerate(candidates)] if sentiment == MarketCondition.BULLISH else [],
-                    'bear': [(c, -0.5, i+1) for i, c in enumerate(candidates)] if sentiment == MarketCondition.BEARISH else [],
-                    'volatile': [(c, 0.3, i+1) for i, c in enumerate(candidates)] if sentiment == MarketCondition.VOLATILE else []
-                }
-                self.web_monitor.update_screening_results(screening_data)
-            
+            self.logger.warning(f"Using fallback simple screener with {len(candidates)} candidates")
             return candidates
-                
+            
         except Exception as e:
-            self.logger.error(f"Error screening stocks: {e}")
+            self.logger.error(f"Error with fallback screener: {e}")
             return []
             
-    async def _get_full_screening_results(self, market_sentiment):
-        """Get full screening results with scores for web display"""
+    async def _get_full_screening_results_sync(self, market_sentiment):
+        """Get full screening results with scores using the sophisticated screener"""
         try:
-            # Get stock universe
+            # Get stock universe from sophisticated screener
             stock_universe = await self.stock_screener.get_dynamic_universe()
             
             # Get technical and sentiment data
@@ -350,15 +418,44 @@ class SyncExecutionEngine2026:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
-                opportunities = loop.run_until_complete(
-                    strategy.scan_opportunities([symbol])
-                )
+                # Create market sentiment dict for strategies that need it
+                market_sentiment_dict = {
+                    'sentiment_score': 0.0,
+                    'bullish': sentiment == MarketCondition.BULLISH,
+                    'bearish': sentiment == MarketCondition.BEARISH,
+                    'volatile': sentiment in [MarketCondition.VOLATILE, MarketCondition.HIGH_VOLATILITY],
+                    'neutral': sentiment == MarketCondition.NEUTRAL,
+                    'volatility_expected': 0.8 if sentiment == MarketCondition.HIGH_VOLATILITY else 0.3
+                }
+                
+                # Call appropriate scan method based on strategy type
+                if strategy_name == 'volatility':
+                    opportunities = loop.run_until_complete(
+                        strategy.scan_opportunities([symbol], market_sentiment_dict)
+                    )
+                else:
+                    opportunities = loop.run_until_complete(
+                        strategy.scan_opportunities([symbol])
+                    )
                 
                 if opportunities:
                     opportunity = opportunities[0]  # Take the best opportunity
                     self.logger.info(f"📊 Found opportunity for {symbol}: "
                                    f"Score={opportunity.get('score', 0):.2f}, "
                                    f"P(profit)={opportunity.get('probability_profit', 0):.2%}")
+                    
+                    # Log opportunity found to web monitor
+                    if self.web_monitor:
+                        self.web_monitor.add_trade_action(
+                            'scan', symbol, strategy_name,
+                            {
+                                'score': opportunity.get('score', 0),
+                                'probability_profit': opportunity.get('probability_profit', 0),
+                                'max_profit': opportunity.get('max_profit', 0),
+                                'max_loss': opportunity.get('max_loss', 0),
+                                'risk_reward_ratio': opportunity.get('risk_reward_ratio', 0)
+                            }
+                        )
                     
                     # Execute the trade
                     order_id = loop.run_until_complete(
@@ -368,10 +465,44 @@ class SyncExecutionEngine2026:
                     if order_id:
                         self.logger.info(f"✅ Trade executed for {symbol}: Order ID {order_id}")
                         self.daily_trades += 1
+                        
+                        # Log successful trade execution to web monitor
+                        if self.web_monitor:
+                            self.web_monitor.add_trade_action(
+                                'open', symbol, strategy_name,
+                                {
+                                    'order_id': order_id,
+                                    'entry_price': opportunity.get('current_price', 0),
+                                    'position_size': opportunity.get('position_size', 0),
+                                    'max_profit': opportunity.get('max_profit', 0),
+                                    'max_loss': opportunity.get('max_loss', 0),
+                                    'strategy_details': {
+                                        'long_strike': opportunity.get('long_strike'),
+                                        'short_strike': opportunity.get('short_strike'),
+                                        'expiry': opportunity.get('expiry'),
+                                        'debit': opportunity.get('debit')
+                                    }
+                                }
+                            )
                     else:
                         self.logger.warning(f"Trade execution failed for {symbol}")
+                        
+                        # Log failed trade execution to web monitor
+                        if self.web_monitor:
+                            self.web_monitor.add_error(
+                                'trade_execution_failed', 
+                                f"Failed to execute {strategy_name} trade for {symbol}",
+                                {'symbol': symbol, 'strategy': strategy_name, 'opportunity': opportunity}
+                            )
                 else:
                     self.logger.info(f"No viable opportunity found for {symbol}")
+                    
+                    # Log no opportunity found
+                    if self.web_monitor:
+                        self.web_monitor.add_trade_action(
+                            'scan', symbol, strategy_name,
+                            {'result': 'no_opportunity', 'reason': 'criteria_not_met'}
+                        )
                 
                 # Restore original client
                 strategy.ibkr_client = original_client
