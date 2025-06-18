@@ -66,9 +66,22 @@ class AsyncIBKRBridge:
         """Async wrapper for news - returns empty list as IBKR news requires special permissions"""
         return []
     
-    def get_market_data(self, symbol: str) -> Optional[Dict]:
-        """Direct pass-through for sync methods"""
-        return self.sync_client.get_market_data(symbol)
+    def get_market_data(self, symbol: str, sec_type: str = 'STK') -> Optional[Dict]:
+        """Direct pass-through for sync methods with sec_type support"""
+        # Check if sync client supports sec_type parameter
+        if hasattr(self.sync_client, 'get_market_data'):
+            method = getattr(self.sync_client, 'get_market_data')
+            import inspect
+            sig = inspect.signature(method)
+            
+            # If sync client supports sec_type, pass it through
+            if 'sec_type' in sig.parameters:
+                return self.sync_client.get_market_data(symbol, sec_type=sec_type)
+            else:
+                # Legacy support - just pass symbol
+                return self.sync_client.get_market_data(symbol)
+        else:
+            return None
     
     def get_historical_data(self, symbol: str, duration: str = '60 D', bar_size: str = '1 day'):
         """Direct pass-through for sync methods"""

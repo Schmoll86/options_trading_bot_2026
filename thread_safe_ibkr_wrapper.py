@@ -34,11 +34,24 @@ class ThreadSafeIBKRWrapper:
                 logger.error(f"Error getting account value: {e}")
                 return 0.0
     
-    def get_market_data(self, symbol: str) -> Dict[str, Any]:
-        """Get market data for symbol"""
+    def get_market_data(self, symbol: str, sec_type: str = 'STK') -> Dict[str, Any]:
+        """Get market data for symbol with security type support"""
         with self._lock:
             try:
-                return self.sync_client.get_market_data(symbol) or {}
+                # Check if sync client supports sec_type parameter
+                if hasattr(self.sync_client, 'get_market_data'):
+                    method = getattr(self.sync_client, 'get_market_data')
+                    import inspect
+                    sig = inspect.signature(method)
+                    
+                    # If sync client supports sec_type, pass it through
+                    if 'sec_type' in sig.parameters:
+                        return self.sync_client.get_market_data(symbol, sec_type=sec_type) or {}
+                    else:
+                        # Legacy support - just pass symbol
+                        return self.sync_client.get_market_data(symbol) or {}
+                else:
+                    return {}
             except Exception as e:
                 logger.error(f"Error getting market data for {symbol}: {e}")
                 return {}

@@ -50,6 +50,13 @@ class SyncExecutionEngine2026:
         
         # Threading
         self._thread = None
+        self._news_thread = None
+        
+        # Continuous news monitoring
+        self.news_running = False
+        self.news_update_interval = 60  # Update news every 60 seconds
+        self.current_market_sentiment = None
+        self.last_news_update = None
         
         # Performance tracking
         self.daily_trades = 0
@@ -64,14 +71,27 @@ class SyncExecutionEngine2026:
         self.running = True
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+        
+        # Start continuous news monitoring
+        self.news_running = True
+        self._news_thread = threading.Thread(target=self._news_monitor_run, daemon=True)
+        self._news_thread.start()
+        
         self.logger.info("🚀 Execution engine started")
+        self.logger.info("📰 News monitor started - running continuously")
         
     def stop(self):
         """Stop the execution engine"""
         self.running = False
+        self.news_running = False
+        
         if self._thread:
             self._thread.join(timeout=10)
+        if self._news_thread:
+            self._news_thread.join(timeout=10)
+            
         self.logger.info("🛑 Execution engine stopped")
+        self.logger.info("📰 News monitor stopped")
         
     def _run(self):
         """Main execution loop"""
@@ -89,6 +109,100 @@ class SyncExecutionEngine2026:
                 # Don't stop the bot on errors
                 time.sleep(30)  # Wait before retrying
                 continue  # Keep the loop running
+                
+    def _news_monitor_run(self):
+        """Continuous news monitoring loop - runs 24/7 when bot is active"""
+        self.logger.info("📰 Starting continuous news monitoring...")
+        
+        while self.news_running:
+            try:
+                # Update market sentiment continuously
+                self._update_news_sentiment()
+                
+                # Sleep for update interval
+                time.sleep(self.news_update_interval)
+                
+            except Exception as e:
+                self.logger.error(f"Error in news monitoring loop: {e}", exc_info=True)
+                # Don't stop news monitoring on errors, just wait and retry
+                time.sleep(60)  # Wait 1 minute before retrying
+                continue
+                
+        self.logger.info("📰 News monitoring loop ended")
+                
+    def _update_news_sentiment(self):
+        """Update market sentiment from news sources - runs continuously"""
+        try:
+            # Get fresh market sentiment from news handler
+            import asyncio
+            
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Get market sentiment asynchronously
+                sentiment_data = loop.run_until_complete(
+                    self.news_analyzer.get_market_sentiment()
+                )
+                
+                # Store the updated sentiment
+                self.current_market_sentiment = sentiment_data
+                self.last_news_update = time.time()
+                
+                # Log sentiment updates (less verbose during off-hours)
+                current_time = datetime.now()
+                overall_sentiment = sentiment_data.get('overall_sentiment', 'unknown')
+                sentiment_score = sentiment_data.get('sentiment_score', 0)
+                vix_level = sentiment_data.get('technical_sentiment', {}).get('vix_level', 20.0)
+                
+                if self._is_trading_hours():
+                    self.logger.info(f"📊 Market sentiment updated: {overall_sentiment} "
+                                   f"(score: {sentiment_score:.3f})")
+                    if self.web_monitor:
+                        self.web_monitor.log_activity("NEWS", "success", 
+                            f"📊 Market sentiment: {overall_sentiment.upper()} "
+                            f"(VIX: {vix_level:.1f}, Score: {sentiment_score:.2f})")
+                else:
+                    # Log less frequently during off-hours (every 10 updates)
+                    if not hasattr(self, '_news_update_count'):
+                        self._news_update_count = 0
+                    self._news_update_count += 1
+                    
+                    if self._news_update_count % 10 == 0:
+                        self.logger.info(f"📊 After-hours sentiment: {overall_sentiment} "
+                                       f"(updates: {self._news_update_count})")
+                        if self.web_monitor:
+                            self.web_monitor.log_activity("NEWS", "info", 
+                                f"🌙 After-hours update #{self._news_update_count}: {overall_sentiment.upper()}")
+                
+                # Update web monitor if available
+                if self.web_monitor and sentiment_data:
+                    market_sentiment = {
+                        'current_sentiment': sentiment_data.get('overall_sentiment', 'neutral'),
+                        'sentiment_score': sentiment_data.get('sentiment_score', 0),
+                        'last_update': datetime.now().isoformat(),
+                        'confidence': sentiment_data.get('confidence', 0.5),
+                        'volatility_expected': sentiment_data.get('volatility_expected', 0.5),
+                        'news_sources': sentiment_data.get('data_sources', []),
+                        'sector_sentiment': sentiment_data.get('sector_sentiment', {}),
+                        'technical_sentiment': sentiment_data.get('technical_sentiment', {})
+                    }
+                    self.web_monitor.update_market_sentiment(market_sentiment)
+                    
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            self.logger.error(f"Error updating news sentiment: {e}")
+            # Set fallback sentiment data
+            self.current_market_sentiment = {
+                'overall_sentiment': 'neutral',
+                'sentiment_score': 0.0,
+                'confidence': 0.5,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
                 
     def _should_analyze(self) -> bool:
         """Check if we should run analysis"""
@@ -133,12 +247,22 @@ class SyncExecutionEngine2026:
         """Execute one complete trading cycle"""
         try:
             self.logger.info("Starting trading cycle...")
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "info", "🚀 Starting new trading cycle")
+                
             self.last_analysis_time = time.time()
             
             # Step 1: Get market sentiment
             self.logger.debug("Analyzing sentiment...")
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "info", "📰 Analyzing market sentiment...")
+                
             sentiment = self._analyze_sentiment()
             self.logger.info(f"Market sentiment: {sentiment}")
+            
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "success", 
+                    f"📊 Market sentiment determined: {sentiment.value}")
             
             # Update web monitor with market sentiment
             if self.web_monitor:
@@ -153,13 +277,21 @@ class SyncExecutionEngine2026:
             
             # Step 2: Screen stocks based on sentiment
             self.logger.debug("Screening stocks...")
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "info", "🔍 Screening stocks for opportunities...")
+                
             candidates = self._screen_stocks(sentiment)
             self.logger.info(f"Found {len(candidates)} candidates")
             
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "info", 
+                    f"📈 Stock screening complete: {len(candidates)} candidates found")
+            
             if not candidates:
                 self.logger.info("No suitable candidates found")
-                # Log this as an action for monitoring
                 if self.web_monitor:
+                    self.web_monitor.log_activity("EXECUTION", "warning", 
+                        "⚠️ No suitable stock candidates found for current market conditions")
                     self.web_monitor.add_trade_action(
                         'scan', 'MARKET', 'screening', 
                         {'result': 'no_candidates', 'sentiment': sentiment.value}
@@ -168,17 +300,29 @@ class SyncExecutionEngine2026:
                 
             # Step 3: Execute appropriate strategy
             self.logger.debug("Executing strategies...")
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "info", 
+                    f"⚡ Executing {sentiment.value} strategy for {len(candidates)} candidates...")
+                    
             self._execute_strategies(sentiment, candidates)
             
             # Step 4: Update positions
             self.logger.debug("Updating positions...")
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "info", "📊 Updating position tracking...")
+                
             self._update_positions()
             
             # Step 5: Manage existing positions
             self.logger.debug("Managing positions...")
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "info", "🔧 Managing existing positions...")
+                
             self._manage_positions()
             
             self.logger.info("Trading cycle completed")
+            if self.web_monitor:
+                self.web_monitor.log_activity("EXECUTION", "success", "✅ Trading cycle completed successfully")
             
         except Exception as e:
             self.logger.error(f"Error in trading cycle: {e}", exc_info=True)
@@ -193,86 +337,95 @@ class SyncExecutionEngine2026:
             return
             
     def _analyze_sentiment(self) -> MarketCondition:
-        """Analyze overall market sentiment"""
+        """Analyze overall market sentiment using continuously updated news data"""
         try:
-            # Analyze market sentiment
-            self.logger.debug("Analyzing sentiment...")
-            self.logger.debug("Getting SPY market data...")
+            self.logger.debug("Analyzing sentiment from continuous news monitoring...")
+            
+            # Use continuously updated sentiment data
+            if self.current_market_sentiment:
+                sentiment_data = self.current_market_sentiment
+                
+                # Check if data is recent (within last 5 minutes)
+                data_age = time.time() - (self.last_news_update or 0)
+                if data_age > 300:  # 5 minutes
+                    self.logger.warning(f"News sentiment data is {data_age:.0f}s old, using fallback")
+                
+                # Extract sentiment information
+                overall_sentiment = sentiment_data.get('overall_sentiment', 'neutral')
+                sentiment_score = sentiment_data.get('sentiment_score', 0.0)
+                volatility_expected = sentiment_data.get('volatility_expected', 0.5)
+                
+                # Store for web monitor
+                tech_sentiment = sentiment_data.get('technical_sentiment', {})
+                self._last_vix_level = tech_sentiment.get('vix_level', 20.0)
+                self._last_spy_price = 0  # Will be updated by news handler
+                self._last_spy_change = tech_sentiment.get('market_momentum', 0.0)
+                
+                # Convert news sentiment to MarketCondition
+                if volatility_expected > 0.7:  # High volatility expected
+                    condition = MarketCondition.HIGH_VOLATILITY
+                    self.logger.info(f"High volatility expected: {volatility_expected:.2f}")
+                elif overall_sentiment == 'bullish' or sentiment_score > 0.2:
+                    condition = MarketCondition.BULLISH
+                elif overall_sentiment == 'bearish' or sentiment_score < -0.2:
+                    condition = MarketCondition.BEARISH
+                else:
+                    condition = MarketCondition.NEUTRAL
+                
+                self.logger.info(f"News-based sentiment: {condition.value} "
+                               f"(score: {sentiment_score:.3f}, volatility: {volatility_expected:.2f})")
+                return condition
+                
+            else:
+                # Fallback: No news data available, get basic market data
+                self.logger.warning("No news sentiment data available, using basic market analysis")
+                return self._fallback_sentiment_analysis()
+                
+        except Exception as e:
+            self.logger.error(f"Error analyzing news sentiment: {e}", exc_info=True)
+            return self._fallback_sentiment_analysis()
+            
+    def _fallback_sentiment_analysis(self) -> MarketCondition:
+        """Fallback sentiment analysis using direct market data"""
+        try:
+            self.logger.debug("Running fallback sentiment analysis...")
             
             # Initialize defaults for web monitor
             self._last_spy_price = 0
             self._last_spy_change = 0
-            self._last_vix_level = 0
+            self._last_vix_level = 20.0
             
-            # Add timeout protection and better error handling
+            # Get basic SPY data for trend
             try:
-                self.logger.debug(f"Calling get_market_data for SPY at {datetime.now()}")
                 spy_data = self.ibkr_client.get_market_data('SPY')
-                self.logger.debug(f"Got SPY data response: {spy_data}")
+                
+                if (spy_data and 
+                    spy_data.get('last') and 
+                    spy_data.get('last', 0) > 0 and 
+                    not spy_data.get('error')):
+                    
+                    last_price = spy_data.get('last', 0)
+                    close_price = spy_data.get('close', 0)
+                    
+                    self._last_spy_price = last_price
+                    
+                    if close_price and close_price != last_price:
+                        change_pct = (last_price - close_price) / close_price
+                        self._last_spy_change = change_pct
+                        
+                        if change_pct > 0.005:  # 0.5% threshold
+                            return MarketCondition.BULLISH
+                        elif change_pct < -0.005:
+                            return MarketCondition.BEARISH
+                            
             except Exception as e:
-                self.logger.error(f"Error getting SPY data: {e}")
-                spy_data = None
+                self.logger.debug(f"Fallback SPY analysis failed: {e}")
             
-            if not spy_data or not spy_data.get('last'):
-                self.logger.warning("No SPY data available, returning NEUTRAL")
-                return MarketCondition.NEUTRAL
-                
-            # Simple market condition logic based on SPY movement
-            last_price = spy_data.get('last', 0)
-            close_price = spy_data.get('close', 0)
-            
-            # Store for web monitor
-            self._last_spy_price = last_price
-            
-            # If we don't have close price, use last price with small threshold
-            if close_price == 0 or close_price == last_price:
-                self.logger.debug("No close price available, using neutral sentiment")
-                market_trend = MarketCondition.NEUTRAL
-                self._last_spy_change = 0
-            else:
-                change_pct = (last_price - close_price) / close_price
-                self._last_spy_change = change_pct
-                self.logger.info(f"SPY change: {change_pct:.3%} (Last: ${last_price:.2f}, Close: ${close_price:.2f})")
-                
-                # Simple 0.5% threshold (reduced from 1%)
-                if change_pct > 0.005:
-                    market_trend = MarketCondition.BULLISH
-                elif change_pct < -0.005:
-                    market_trend = MarketCondition.BEARISH
-                else:
-                    market_trend = MarketCondition.NEUTRAL
-            
-            # Get VIX data for volatility assessment (optional)
-            volatility = MarketCondition.NORMAL_VOLATILITY
-            try:
-                self.logger.debug("Getting VIX market data...")
-                vix_data = self.ibkr_client.get_market_data('VIX')
-                self.logger.debug(f"Got VIX data response: {vix_data}")
-                
-                if vix_data and vix_data.get('last') and vix_data['last'] > 0:
-                    vix_level = vix_data['last']
-                    self._last_vix_level = vix_level  # Store for web monitor
-                    self.logger.info(f"VIX level: {vix_level:.2f}")
-                    # High VIX = high volatility
-                    if vix_level > 20:
-                        volatility = MarketCondition.HIGH_VOLATILITY
-                        self.logger.info(f"High volatility detected: VIX={vix_level:.2f}")
-                else:
-                    self.logger.debug("No valid VIX data available, using normal volatility")
-            except Exception as e:
-                self.logger.debug(f"Could not get VIX data: {e}, continuing without it")
-                # Continue without VIX data rather than crashing
-            
-            # Return HIGH_VOLATILITY if detected, otherwise return trend
-            if volatility == MarketCondition.HIGH_VOLATILITY:
-                self.logger.info(f"Market analysis complete: {volatility.value}")
-                return volatility
-            
-            self.logger.info(f"Market analysis complete: {market_trend.value}")
-            return market_trend
+            self.logger.info("Fallback analysis complete: NEUTRAL")
+            return MarketCondition.NEUTRAL
             
         except Exception as e:
-            self.logger.error(f"Error analyzing sentiment: {e}", exc_info=True)
+            self.logger.error(f"Error in fallback sentiment analysis: {e}")
             return MarketCondition.NEUTRAL
             
     def _screen_stocks(self, sentiment: MarketCondition) -> List[str]:
@@ -290,6 +443,9 @@ class SyncExecutionEngine2026:
             
             # Use sophisticated StockScreener2026 (passed in constructor)
             self.logger.info("Using sophisticated StockScreener2026 with full S&P 500 universe")
+            if self.web_monitor:
+                self.web_monitor.log_activity("SCREENER", "info", 
+                    f"🔍 Screening S&P 500 universe for {sentiment.value} opportunities...")
             
             # Run async screening in sync context
             import asyncio
@@ -305,6 +461,10 @@ class SyncExecutionEngine2026:
                 )
                 
                 self.logger.info(f"Sophisticated screener found {len(candidates)} candidates: {candidates[:5]}...")
+                if self.web_monitor:
+                    self.web_monitor.log_activity("SCREENER", "success", 
+                        f"📈 Found {len(candidates)} qualified candidates: {', '.join(candidates[:5])}" + 
+                        (f" +{len(candidates)-5} more" if len(candidates) > 5 else ""))
                 
                 # Update web monitor with sophisticated screening results if available
                 if self.web_monitor and candidates:
@@ -397,11 +557,17 @@ class SyncExecutionEngine2026:
         strategy_name = strategy_names[strategy_idx]
         
         self.logger.info(f"🎯 Market sentiment: {sentiment.value} → Executing {strategy_name} strategy")
+        if self.web_monitor:
+            self.web_monitor.log_activity("STRATEGY", "info", 
+                f"🎯 Executing {strategy_name.upper()} strategy for {len(candidates[:5])} top candidates")
         
         # Execute trades for each candidate
         for symbol in candidates[:5]:  # Limit to top 5
             try:
                 self.logger.info(f"Evaluating {symbol} for {strategy_name} strategy")
+                if self.web_monitor:
+                    self.web_monitor.log_activity("STRATEGY", "info", 
+                        f"🔎 Analyzing {symbol} for {strategy_name} options opportunities...")
                 
                 # Run async strategy methods synchronously
                 import asyncio
@@ -444,6 +610,12 @@ class SyncExecutionEngine2026:
                                    f"Score={opportunity.get('score', 0):.2f}, "
                                    f"P(profit)={opportunity.get('probability_profit', 0):.2%}")
                     
+                    if self.web_monitor:
+                        self.web_monitor.log_activity("STRATEGY", "success", 
+                            f"✅ {symbol}: Found viable {strategy_name} opportunity "
+                            f"(Score: {opportunity.get('score', 0):.2f}, "
+                            f"P(profit): {opportunity.get('probability_profit', 0):.1%})")
+                    
                     # Log opportunity found to web monitor
                     if self.web_monitor:
                         self.web_monitor.add_trade_action(
@@ -466,6 +638,11 @@ class SyncExecutionEngine2026:
                         self.logger.info(f"✅ Trade executed for {symbol}: Order ID {order_id}")
                         self.daily_trades += 1
                         
+                        if self.web_monitor:
+                            self.web_monitor.log_activity("STRATEGY", "success", 
+                                f"💰 {symbol}: {strategy_name.upper()} trade executed! "
+                                f"Order ID: {order_id} | Cost: ${opportunity.get('max_loss', 0):.0f}")
+                        
                         # Log successful trade execution to web monitor
                         if self.web_monitor:
                             self.web_monitor.add_trade_action(
@@ -486,6 +663,10 @@ class SyncExecutionEngine2026:
                             )
                     else:
                         self.logger.warning(f"Trade execution failed for {symbol}")
+                        
+                        if self.web_monitor:
+                            self.web_monitor.log_activity("STRATEGY", "error", 
+                                f"❌ {symbol}: Trade execution failed for {strategy_name} strategy")
                         
                         # Log failed trade execution to web monitor
                         if self.web_monitor:

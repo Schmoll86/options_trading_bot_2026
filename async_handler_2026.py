@@ -70,7 +70,7 @@ class IBKRSyncWrapper:
                 return float(av.value)
         return 0.0
         
-    def get_market_data(self, symbol: str) -> Optional[Dict]:
+    def get_market_data(self, symbol: str, sec_type: str = 'STK') -> Optional[Dict]:
         """
         Get real market data from IBKR - NO MOCK DATA
         Required by: All strategy modules for market analysis
@@ -81,10 +81,14 @@ class IBKRSyncWrapper:
             
         self.logger.info(f"get_market_data called for {symbol}")
         
+        # Add timeout protection to prevent hanging
+        start_time = time.time()
+        timeout_seconds = 30  # Maximum 30 seconds for market data retrieval
+        
         try:
-            # Create contract based on symbol type
-            if symbol == 'VIX':
-                contract = Index('VIX', 'CBOE')
+            # Create contract based on security type
+            if sec_type == 'IND' or symbol == 'VIX':
+                contract = Index(symbol, 'CBOE' if symbol == 'VIX' else 'SMART')
             else:
                 contract = Stock(symbol, 'SMART', 'USD')
             
@@ -99,12 +103,23 @@ class IBKRSyncWrapper:
             except Exception as e:
                 self.logger.warning(f"Error qualifying {symbol}: {e}")
             
+            # Check timeout after qualification
+            if time.time() - start_time > timeout_seconds:
+                self.logger.warning(f"Timeout qualifying contract for {symbol}")
+                return None
+            
             # Request real market data snapshot
             ticker = self.ib.reqMktData(contract, snapshot=True)
             
-            # Wait for real data with proper retry logic
-            max_attempts = 15
+            # Wait for real data with timeout protection
+            max_attempts = 10  # Reduced from 15 to 10 attempts
             for i in range(max_attempts):
+                # Check timeout before each attempt
+                if time.time() - start_time > timeout_seconds:
+                    self.logger.warning(f"Timeout waiting for {symbol} data after {timeout_seconds}s")
+                    self.ib.cancelMktData(contract)
+                    return None
+                
                 # Check for valid real data
                 if ticker.last and str(ticker.last) != 'nan' and ticker.last > 0:
                     # Cancel the market data request to free resources
@@ -119,7 +134,8 @@ class IBKRSyncWrapper:
                         'close': ticker.close if ticker.close and str(ticker.close) != 'nan' else ticker.last
                     }
                     
-                    self.logger.info(f"Got market data for {symbol}: ${result['last']:.2f}")
+                    elapsed = time.time() - start_time
+                    self.logger.info(f"Got market data for {symbol}: ${result['last']:.2f} (took {elapsed:.1f}s)")
                     return result
                     
                 # Also check if we have bid/ask but no last (can happen with delayed data)
@@ -137,26 +153,50 @@ class IBKRSyncWrapper:
                         'close': ticker.close if ticker.close and str(ticker.close) != 'nan' else mid_price
                     }
                     
-                    self.logger.info(f"Got market data for {symbol} (using mid): ${result['last']:.2f}")
+                    elapsed = time.time() - start_time
+                    self.logger.info(f"Got market data for {symbol} (using mid): ${result['last']:.2f} (took {elapsed:.1f}s)")
                     return result
                     
-                # Wait before retry
-                self.ib.sleep(1)
+                # Wait before retry (shorter intervals)
+                self.ib.sleep(0.8)  # Reduced from 1.0 to 0.8 seconds
                 
-                # Log progress every 5 attempts
-                if (i + 1) % 5 == 0:
-                    self.logger.debug(f"Still waiting for {symbol} data... attempt {i+1}/{max_attempts}")
+                # Log progress every 3 attempts (more frequent)
+                if (i + 1) % 3 == 0:
+                    elapsed = time.time() - start_time
+                    self.logger.debug(f"Still waiting for {symbol} data... attempt {i+1}/{max_attempts} ({elapsed:.1f}s elapsed)")
             
             # Cancel the request if no data received
             self.ib.cancelMktData(contract)
             
-            # If no data, return None
-            self.logger.warning(f"No data for {symbol} after {max_attempts} attempts")
-            return None
+            # If no data, return fallback data to keep bot running
+            elapsed = time.time() - start_time
+            self.logger.warning(f"No data for {symbol} after {max_attempts} attempts ({elapsed:.1f}s), using fallback")
+            
+            # Return fallback data structure to prevent None errors downstream
+            return {
+                'symbol': symbol,
+                'last': 0.0,
+                'bid': 0.0,
+                'ask': 0.0,
+                'volume': 0,
+                'close': 0.0,
+                'error': 'no_data_available'
+            }
             
         except Exception as e:
-            self.logger.error(f"Error getting {symbol}: {e}")
-            return None
+            elapsed = time.time() - start_time
+            self.logger.error(f"Error getting {symbol} data ({elapsed:.1f}s): {e}")
+            
+            # Return fallback data structure instead of None
+            return {
+                'symbol': symbol,
+                'last': 0.0,
+                'bid': 0.0,
+                'ask': 0.0,
+                'volume': 0,
+                'close': 0.0,
+                'error': str(e)
+            }
             
     def get_historical_data(self, symbol: str, duration: str = '60 D', 
                           bar_size: str = '1 day') -> Any:

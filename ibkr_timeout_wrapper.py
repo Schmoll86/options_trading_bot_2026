@@ -18,12 +18,27 @@ class IBKRTimeoutWrapper:
         self.logger = logging.getLogger(__name__)
         self.executor = ThreadPoolExecutor(max_workers=1)
         
-    def get_market_data(self, symbol: str, timeout: Optional[int] = None) -> Optional[Dict]:
-        """Get market data with timeout"""
+    def get_market_data(self, symbol: str, sec_type: str = 'STK', timeout: Optional[int] = None) -> Optional[Dict]:
+        """Get market data with timeout and sec_type support"""
         timeout = timeout or self.default_timeout
         
         try:
-            future = self.executor.submit(self.client.get_market_data, symbol)
+            # Check if client supports sec_type parameter
+            if hasattr(self.client, 'get_market_data'):
+                method = getattr(self.client, 'get_market_data')
+                import inspect
+                sig = inspect.signature(method)
+                
+                if 'sec_type' in sig.parameters:
+                    # Client supports sec_type, pass it through
+                    future = self.executor.submit(self.client.get_market_data, symbol, sec_type)
+                else:
+                    # Legacy client - just pass symbol
+                    future = self.executor.submit(self.client.get_market_data, symbol)
+            else:
+                self.logger.error(f"Client does not have get_market_data method")
+                return None
+            
             result = future.result(timeout=timeout)
             self.logger.debug(f"Got market data for {symbol}: {result}")
             return result

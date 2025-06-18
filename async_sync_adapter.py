@@ -33,14 +33,26 @@ class AsyncSyncAdapter:
     # CORE MARKET DATA METHODS
     # =============================================================================
     
-    async def get_market_data(self, symbol: str) -> Optional[Dict]:
+    async def get_market_data(self, symbol: str, sec_type: str = 'STK') -> Optional[Dict]:
         """
         Async wrapper for sync get_market_data
-        Required by: All strategy modules
+        Required by: All strategy modules and news handler
         """
         try:
-            # Call the sync method directly
-            return self.sync_client.get_market_data(symbol)
+            # Check if sync client supports sec_type parameter
+            if hasattr(self.sync_client, 'get_market_data'):
+                method = getattr(self.sync_client, 'get_market_data')
+                import inspect
+                sig = inspect.signature(method)
+                
+                # If sync client supports sec_type, pass it through
+                if 'sec_type' in sig.parameters:
+                    return self.sync_client.get_market_data(symbol, sec_type=sec_type)
+                else:
+                    # Legacy support - just pass symbol
+                    return self.sync_client.get_market_data(symbol)
+            else:
+                return None
         except Exception as e:
             self.logger.error(f"Error getting market data for {symbol}: {e}")
             return None

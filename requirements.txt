@@ -9,6 +9,7 @@ pandas>=2.0.0
 
 # Web interface
 flask>=2.3.0
+flask-socketio>=5.3.0
 werkzeug>=2.3.0
 
 # Time zone handling

@@ -76,11 +76,15 @@ class IBKRClient2026:
             self.logger.error(f"Error getting positions: {e}")
             return []
 
-    async def get_market_data(self, symbol: str) -> Optional[Dict]:
+    async def get_market_data(self, symbol: str, sec_type: str = 'STK') -> Optional[Dict]:
         """Get current market data for a symbol."""
         try:
-            # Create stock contract
-            contract = Stock(symbol, 'SMART', 'USD')
+            # Create contract based on security type
+            if sec_type == 'IND' or symbol == 'VIX':
+                from ib_insync import Index
+                contract = Index(symbol, 'CBOE' if symbol == 'VIX' else 'SMART')
+            else:
+                contract = Stock(symbol, 'SMART', 'USD')
             
             # Check if we already have a ticker for this symbol
             if symbol in self._tickers:
